@@ -1,0 +1,70 @@
+{
+  "_about": "What Setup-My-TV can turn off. Everything is DISABLED (pm disable-user), never uninstalled, and Restore-My-TV turns it back on. Only packages that exist on the TV are used. Tested on Xiaomi Google TV (MiTV-AXFR2); the Google entries apply to any Google TV.",
+  "groups": [
+    {
+      "id": "ads",
+      "question": "Turn off ads, sponsored rows and tracking? (recommended)",
+      "default": true,
+      "packages": {
+        "com.miui.tv.analytics": "Xiaomi analytics",
+        "com.xiaomi.statistic": "Xiaomi log upload",
+        "com.xiaomi.tvqs.overseas": "Xiaomi quality stats uploader",
+        "com.xiaomi.tvqs.overseas.y24": "Xiaomi quality stats uploader (2024 sets)",
+        "com.google.android.feedback": "Google feedback reporter",
+        "com.mitv.tvhome.atv": "PatchWall",
+        "com.mitv.tvhome.michannel": "Mi channels",
+        "com.mitv.tvhome.mitvplus": "Mi TV+ sponsored live channels",
+        "com.mitv.tvhome.oemtab": "the 'Mi Home' tab in Google TV",
+        "com.xm.webcontent": "Xiaomi web content rows",
+        "com.google.android.tvrecommendations": "sponsored rows in the old Android TV home",
+        "android.autoinstalls.config.xioami.dangal": "partner app auto-installs (Xiaomi)",
+        "android.autoinstalls.config.google.gtvpai": "partner app auto-installs (Google TV)"
+      }
+    },
+    {
+      "id": "helpers",
+      "question": "Turn off Xiaomi TV Manager (cleaner/booster), the built-in manual and legal screens?",
+      "default": true,
+      "packages": {
+        "com.xiaomi.mitv.tvmanager": "TV Manager",
+        "com.xiaomi.mitv.manualhelp": "built-in manual",
+        "com.xiaomo.tv.milegal": "legal / privacy text screens"
+      }
+    },
+    {
+      "id": "mirroring",
+      "question": "Turn off Xiaomi screen mirroring (Miracast, Mi Cast)? Chromecast from phones keeps working",
+      "default": true,
+      "packages": {
+        "com.xiaomi.mitv.smartshare": "Miracast / MiPlay receiver",
+        "com.xiaomi.wfdsinkhelperservice": "Miracast sink",
+        "com.mitv.milinkservice": "Mi Cast discovery"
+      }
+    },
+    {
+      "id": "updates",
+      "question": "Turn off firmware updates? (an update can bring ads back; you can turn them on again with Restore)",
+      "default": false,
+      "packages": {
+        "com.xiaomi.mitv.updateservice": "Xiaomi firmware updates",
+        "com.mitv.upgrader": "Xiaomi upgrader"
+      }
+    }
+  ],
+  "apps": {
+    "_about": "Asked one by one: say n for the apps nobody uses.",
+    "tv.airtel.xstream.tvapp": "Airtel Xstream",
+    "com.graymatrix.did": "ZEE5",
+    "com.sonyliv": "SonyLIV",
+    "com.jio.media.stb.ondemand": "JioCinema / JioTV",
+    "com.google.android.youtube.tvmusic": "YouTube Music",
+    "com.amazon.amazonvideo.livingroom": "Prime Video",
+    "in.startv.hotstar": "JioHotstar",
+    "com.netflix.ninja": "Netflix",
+    "com.mxtech.videoplayer.television": "MX Player",
+    "com.formulaone.production": "F1 TV",
+    "com.google.android.play.games": "Google Play Games",
+    "com.xiaomi.mimusic2": "Mi Music",
+    "com.google.android.videos": "Google TV / Play Movies"
+  }
+}

@@ -1,0 +1,5 @@
+# Made on your PC by setup: never commit them (they hold your TV's details)
+backup/
+tools/
+# The ready-built apps ship in the Release zip, not in the repository
+apps/*.apk

@@ -1,0 +1,50 @@
+{
+  "dock_apps": [
+    "org.smarttube.stable",
+    "in.startv.hotstar",
+    "com.netflix.ninja",
+    "com.amazon.amazonvideo.livingroom"
+  ],
+  "live_tv_package": "com.mitv.livetv",
+  "hidden_apps": [
+    "com.mitv.livetv",
+    "com.xiaomi.mitv.manualhelp",
+    "com.xiaomi.mitv.tvmanager",
+    "io.github.sumyabazar1.weather",
+    "com.google.android.youtube.tv"
+  ],
+  "app_library": true,
+  "show_library_pill": true,
+  "tile_menu": true,
+  "greeting_name": "",
+  "show_greeting": true,
+  "festival": "auto",
+  "festival_icons": true,
+  "festival_calendar": [],
+  "weather_mood": true,
+  "weather_latitude": "",
+  "weather_longitude": "",
+  "weather_place": "",
+  "sky_intensity": 70,
+  "background_color": "#05070D",
+  "wallpaper": false,
+  "columns": 4,
+  "always_show_names": true,
+  "animations": true,
+  "advanced_effects": false,
+  "reduced_motion": false,
+  "ambient_glow": true,
+  "home_idle_clock_minutes": 15,
+  "add_tile": true,
+  "app_labels": [
+    "io.github.sumyabazar1.weather=Weather",
+    "io.github.savioronezero.worldclock=World Clock"
+  ],
+  "weather_pill": true,
+  "weather_app": "io.github.sumyabazar1.weather",
+  "key_filter": true,
+  "key_filter_home_only": true,
+  "app_keys": [
+    "KEYCODE_BUTTON_3:org.smarttube.stable"
+  ]
+}
