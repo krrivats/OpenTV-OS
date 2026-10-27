@@ -30,7 +30,7 @@ No root, no cable, nothing uninstalled, and one double-click to undo. Built on
 ### 1. On the TV
 1. **Settings → Device Preferences → About** → press **OK** on **Build** 7 times ("You are now a developer").
 2. Back → **Developer options** → turn on **USB debugging** (and **Network debugging** if you see it).
-3. **Settings → Network & Internet →** your Wi-Fi → note the **IP address** (like `192.168.1.12`).
+3. **Settings → Network & Internet →** your Wi-Fi → note the **IP address** (like `192.168.1.50`).
 
 ### 2. On your Windows PC (same Wi-Fi as the TV)
 1. Go to **[Releases](../../releases/latest)** and download **`OpenTV-OS.zip`**.

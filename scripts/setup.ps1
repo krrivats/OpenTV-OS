@@ -17,7 +17,7 @@ Write-Host ''
 # ---- 1. Questions ------------------------------------------------------------------------------------------
 if (-not $Name) { $Name = Ask 'Your name for the greeting ("Good evening, <name>"; leave empty for none)' }
 if (-not $City) { $City = Ask 'Your city for the weather (e.g. Jaipur; leave empty to skip weather)' }
-if (-not $TvIp) { $TvIp = Ask 'The TV''s IP address (e.g. 192.168.1.12)' }
+if (-not $TvIp) { $TvIp = Ask 'The TV''s IP address (e.g. 192.168.1.50)' }
 if ($TvIp -notmatch '^\d{1,3}(\.\d{1,3}){3}(:\d+)?$') { throw "That does not look like an IP address: $TvIp" }
 
 $place = $null
