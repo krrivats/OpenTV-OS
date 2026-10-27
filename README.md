@@ -8,14 +8,14 @@ No root, no cable, nothing uninstalled, and one double-click to undo. Built on
 | Home during Diwali | The new Weather app |
 |---|---|
 | ![Home with the Diwali wallpaper, countdown and weather pill](docs/screenshots/home-diwali.png) | ![Weather: now, next 24 hours and 7 days](docs/screenshots/weather.png) |
-| ![Dock and app grid](docs/screenshots/home-grid.png) | ![The + Add app tile at the end of the grid](docs/screenshots/add-app-tile.png) |
+| ![Dock and app grid](docs/screenshots/home-grid.png) | ![+ Add app and All apps at the end of the grid](docs/screenshots/add-app-tile.png) |
 
 ## What you get
 
 | | |
 |---|---|
 | **No ads, no tracking** | Sponsored rows, PatchWall, partner auto-installs and analytics turned off (disabled, never deleted) |
-| **A clean home screen** | Apple TV style dock, big tiles with names, an **+ Add app** tile, hold OK on a tile to move or remove it |
+| **A clean home screen** | Apple TV style dock, big tiles with names, hold OK on a tile to move or remove it. At the end of the grid: **+ Add app** (puts an app on Home) and **All apps** (opens any installed app without adding a tile) |
 | **Your name** | "Good evening, *your name*" |
 | **Indian festivals, automatic** | Diwali, Holi, Lohri, Makar Sankranti, Raksha Bandhan, Janmashtami, Ganesh Chaturthi, Navratri, Dussehra, Karwa Chauth, Gurpurab, Republic Day, Independence Day, Christmas and New Year. Each shows 14 days before and after (national days: 3 before, 1 after) with its own wallpaper, colour, diya/bell/marigold icons and a countdown ("Diwali in 5 days") under your name |
 | **Live weather for your city** | A weather pill in the top bar (icon + temperature), the sky tinted by the weather, and a full Weather app with the next 24 hours and 7 days |

@@ -44,5 +44,6 @@
   "key_filter": false,
   "key_filter_home_only": false,
   "home_long_press_home": false,
-  "stock_home_redirect": "com.google.android.apps.tv.launcherx"
+  "stock_home_redirect": "com.google.android.apps.tv.launcherx",
+  "all_apps_tile": true
 }

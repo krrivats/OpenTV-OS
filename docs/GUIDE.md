@@ -30,7 +30,8 @@ Edit it, then run setup again (it is safe to repeat). The keys come from
 | `festival_calendar` | Your own or corrected dates: `"2028-03-11..2028-03-11=holi"`, or `"..=name=Greeting=#RRGGBB"` |
 | `festival_icons` | `true`: diya, bell and marigold icons during festival windows |
 | `weather_mood`, `weather_pill`, `weather_place`, `weather_latitude`, `weather_longitude` | Sky tint, top-bar pill and the place (setup fills the place in) |
-| `add_tile` | The **+ Add app** tile at the end of the grid |
+| `add_tile`, `all_apps_tile` | **+ Add app** (adds an app to Home) and **All apps** (opens any app, no tile) at the end of the grid |
+| `stock_home_redirect` | The Google TV home's screen sends you back to OpenTV (kept on for voice search) |
 | `key_filter_home_only` | The key helper filters keys only while Home is on screen (see below) |
 | `app_keys` | Remote buttons that open an app, e.g. `"KEYCODE_BUTTON_3:org.smarttube.stable"` |
 | `dock_apps`, `hidden_apps`, `app_labels`, `columns` | Dock, hidden apps, tile names, columns |
@@ -47,8 +48,9 @@ Tested on the Xiaomi MiTV-AXFR2; other Google TVs are likely the same.
   YouTube button does nothing.
 - **It always gets the Home press first.** It is a system app with a higher priority than any downloaded launcher,
   so Android picks it even though OpenTV is the saved default and holds the HOME role. The launcher's HomeKeyService
-  (`stock_home_redirect`) sees its screen appear and brings OpenTV back (0.4 to 1.2 s), leaving voice search results
-  alone for 30 s after the Assistant.
+  (`stock_home_redirect`) sees its screen appear and brings OpenTV back (about 0.6 s, no transition), leaving voice
+  search results alone for 30 s after the Assistant. Covering that moment with a still picture of OpenTV was tried:
+  the Xiaomi firmware keeps raising the Google TV home for about 1 s, so the cover read as a freeze, and it is off.
 - **Why not catch the Home key directly?** A helper that filters key events (`key_filter` true, `home_long_press_home`)
   does give an instant Home, but this firmware then drops held-key repeat: Volume moves one step per press. Choose it in
   `theme/config.json` if you prefer instant Home over a ramping Volume.

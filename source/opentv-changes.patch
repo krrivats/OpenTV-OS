@@ -2857,27 +2857,39 @@ index 701b5fe..cd8b972 100644
          <activity
              android:name=".ClockActivity"
 diff --git a/launcher/app/src/main/java/com/gathin/tvhome/AppAdapter.java b/launcher/app/src/main/java/com/gathin/tvhome/AppAdapter.java
-index 3632d74..3c9f3bb 100644
+index 3632d74..454b0d4 100644
 --- a/launcher/app/src/main/java/com/gathin/tvhome/AppAdapter.java
 +++ b/launcher/app/src/main/java/com/gathin/tvhome/AppAdapter.java
-@@ -184,6 +184,8 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
+@@ -57,6 +57,8 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
+         boolean onTileVerticalKey(int position, int keyCode);
+ 
+         void onLibraryRequested();
++        /** The "All apps" tile: every installed app, opened on OK instead of added to Home. */
++        void onAllAppsRequested();
+         void onLibraryFocused();
+         /** Hold OK on a tile: the activity shows the tile menu (move, remove from Home, app info). */
+         void onTileLongPress(int position, View card);
+@@ -184,6 +186,10 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
      private final boolean dockRow;
      /** config single_row: tiles sit in one sideways row, each as wide as a grid column would be. */
      private final boolean singleRow;
 +    /** The App library as a "+ Add app" tile: always with single_row, in the grid with add_tile. */
 +    private final boolean addTile;
++    /** all_apps_tile: an "All apps" tile right after "+ Add app", which only opens apps. */
++    private final boolean allAppsTile;
      /** config always_show_names: the alpha of an unfocused tile's name (0 hides it). */
      private final float restNameAlpha;
      /** cinematic_home: only then does a launch record the last-opened app the shelf uses. */
-@@ -236,6 +238,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
+@@ -236,6 +242,8 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
          this.dockTitle = cfg.dockTitle;
          this.dockRow = cfg.dockRow;
          this.singleRow = cfg.singleRow;
 +        this.addTile = cfg.singleRow || cfg.addTile;
++        this.allAppsTile = this.addTile && cfg.allAppsTile;
          this.restNameAlpha = cfg.alwaysShowNames ? 0.75f : 0f;
          this.cinematic = cfg.cinematicHome;
          this.launchActions = cfg.launchActions;
-@@ -288,8 +291,9 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
+@@ -288,8 +296,9 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
              if (card != null && !card.component.equals(component)) continue;   // the card stands in for this tile
              // Same cleaner as the card prompt: an app label with a bidi override or line separator must not
              // redraw the tile name as something else (#117).
@@ -2889,7 +2901,7 @@ index 3632d74..3c9f3bb 100644
              if (!seen.add(pkg + '\n' + label)) continue;
              Drawable banner = null;
              // uniform_tiles draws the icon, so an app's banner is never loaded. A module card keeps its banner.
-@@ -301,7 +305,8 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
+@@ -301,7 +310,8 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
              // banner skips loading and decoding it.
              Drawable icon = banner == null ? ri.loadIcon(pm) : null;
              if (card != null) {
@@ -2899,7 +2911,7 @@ index 3632d74..3c9f3bb 100644
              } else {
                  fresh.add(new Entry(label, component, banner, icon));
              }
-@@ -382,7 +387,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
+@@ -382,7 +392,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
      @NonNull
      @Override
      public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
@@ -2908,15 +2920,16 @@ index 3632d74..3c9f3bb 100644
              View row = LayoutInflater.from(ctx).inflate(R.layout.row_app_library, parent, false);
              View button = row.findViewById(R.id.btnLibrary);
              button.setOnClickListener(v -> listener.onLibraryRequested());
-@@ -418,6 +423,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
+@@ -418,6 +428,8 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
          name.setLayoutParams(nameLp);
          // A sideways row would stretch a match_parent item across the whole screen: give it a grid column's width.
          if (singleRow) v.getLayoutParams().width = inner / dockSize;
 +        if (viewType == 1) return addTile(v, card, (TextView) name, Math.round(h * 0.42f));
++        if (viewType == 2) return allAppsTile(v, card, (TextView) name, Math.round(h * 0.42f));
          if (uniformTiles) {
              // tvOS-style tile: a large centred mark, no caption inside the card.
              View icon = v.findViewById(R.id.icon);
-@@ -439,6 +445,37 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
+@@ -439,9 +451,54 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
          return new Holder(v, listener, animations, advancedEffects, reducedMotion, restNameAlpha, focusOvershoot);
      }
  
@@ -2945,20 +2958,66 @@ index 3632d74..3c9f3bb 100644
 +            float s = focused ? 1.06f : 1f;
 +            card.animate().scaleX(s).scaleY(s).setDuration(reducedMotion ? Motion.REDUCED_MS : 160).start();
 +        });
-+        // The row's end: Right stays here; Left goes back to the last app; Up and Down are the row's own (top bar).
++        // The row's end: Right stays here (or goes on to "All apps"); Left goes back to the last app.
++        card.setOnKeyListener((x, key, event) -> event.getAction() == KeyEvent.ACTION_DOWN
++                && key == KeyEvent.KEYCODE_DPAD_RIGHT && !allAppsTile);
++        return new RecyclerView.ViewHolder(v) { };
++    }
++
++    /** all_apps_tile: like "+ Add app", but the library it opens starts apps on OK (holding OK still adds one). */
++    private RecyclerView.ViewHolder allAppsTile(View v, View card, TextView name, int iconPx) {
++        RecyclerView.ViewHolder holder = addTile(v, card, name, iconPx);
++        ((android.widget.ImageView) v.findViewById(R.id.icon)).setImageResource(R.drawable.ic_apps);
++        name.setText(R.string.all_apps);
++        card.setContentDescription(ctx.getString(R.string.all_apps));
++        card.setId(R.id.btnAllApps);
++        card.setOnClickListener(x -> listener.onAllAppsRequested());
++        // The grid's very end: Right stays here.
 +        card.setOnKeyListener((x, key, event) -> event.getAction() == KeyEvent.ACTION_DOWN
 +                && key == KeyEvent.KEYCODE_DPAD_RIGHT);
-+        return new RecyclerView.ViewHolder(v) { };
++        return holder;
 +    }
 +
      @Override
      public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
-         if (isLibraryAt(position)) return;
+-        if (isLibraryAt(position)) return;
++        if (isLibraryAt(position) || isAllAppsAt(position)) return;
+         Holder h = (Holder) holder;
+         Entry e = items.get(position);
+         if (e.kind == Entry.EMPTY) {
+@@ -540,14 +597,17 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
+ 
+     @Override
+     public int getItemCount() {
+-        return items.size() + (showLibrary ? 1 : 0);
++        return items.size() + (showLibrary ? 1 : 0) + (showLibrary && allAppsTile ? 1 : 0);
+     }
+ 
+     int appCount() { return items.size(); }
+ 
+     boolean isLibraryAt(int position) { return showLibrary && position == items.size(); }
+ 
+-    @Override public int getItemViewType(int position) { return isLibraryAt(position) ? 1 : 0; }
++    /** The "All apps" tile, right after the "+ Add app" one. */
++    boolean isAllAppsAt(int position) { return showLibrary && allAppsTile && position == items.size() + 1; }
++
++    @Override public int getItemViewType(int position) { return isLibraryAt(position) ? 1 : isAllAppsAt(position) ? 2 : 0; }
+ 
+     boolean containsPackage(String pkg) {
+         for (Entry entry : items) if (entry.pkg.equals(pkg)) return true;
+@@ -556,6 +616,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
+ 
+     @Override
+     public long getItemId(int position) {
++        if (isAllAppsAt(position)) return Long.MIN_VALUE + 1;
+         return isLibraryAt(position) ? Long.MIN_VALUE : items.get(position).component.flattenToShortString().hashCode();
+     }
+ 
 diff --git a/launcher/app/src/main/java/com/gathin/tvhome/Config.java b/launcher/app/src/main/java/com/gathin/tvhome/Config.java
-index 71356ff..5efbe51 100644
+index 71356ff..c6d885c 100644
 --- a/launcher/app/src/main/java/com/gathin/tvhome/Config.java
 +++ b/launcher/app/src/main/java/com/gathin/tvhome/Config.java
-@@ -139,6 +139,20 @@ final class Config {
+@@ -139,6 +139,21 @@ final class Config {
      final boolean showHomeSettingsShortcut;
      /** One line under the clock: CPU, free memory, free storage. Off unless config or a theme turns it on. */
      final boolean showStats;
@@ -2969,6 +3028,7 @@ index 71356ff..5efbe51 100644
 +    boolean weatherPill;
 +    String weatherApp = "";
 +    boolean addTile;
++    boolean allAppsTile;
 +    boolean keyFilterHomeOnly;
 +    /** voice_search_app: the app the voice-search key target opens its YouTube search in. */
 +    String voiceSearchApp = "org.smarttube.stable";
@@ -2979,7 +3039,7 @@ index 71356ff..5efbe51 100644
      /** App library pill after the last Home row (config.xml app_library). */
      final boolean appLibrary;
      /** OK directly toggles Home membership in the library (app_library_selection). */
-@@ -645,9 +659,25 @@ final class Config {
+@@ -645,9 +660,25 @@ final class Config {
          }
          // A festive skin comes only from a theme; config.xml has no festival.
          Festival festival = json == null ? Festival.NONE : Festival.parse(string(json, "festival", ""),
@@ -3007,7 +3067,7 @@ index 71356ff..5efbe51 100644
                  packageMap(appBanners), panelService, panelAction, panelExtra, coocaaSources, inputAction, inputSources, inputUriScheme, Math.max(1, columns),
                  Math.max(0, rowsBelow), animations, advancedEffects, shamsi, greetingName, moduleCards, reducedMotion, bootToLiveTv,
                  openOnStartChoice, dockTitle, dockRow, topMenu, launcherSettingsButton, reorderButton, showNetworkPill, showInputsPill,
-@@ -661,6 +691,26 @@ final class Config {
+@@ -661,6 +692,28 @@ final class Config {
                  consumeVolumeKeys, powerOnHome, homeLongPressHome, wifiStatusWarnings, topBarApps, showGreeting, headerWhite, clockWallpaper,
                  Math.max(0, Math.min(90, clockWallpaperDim)), clockGlow, glassStyle, singleRow && dockRow, dockBandAll, lunar, lunarOffset,
                  dateBelowClock, vpnPill, locale, powerOnHomeAlways);
@@ -3020,6 +3080,8 @@ index 71356ff..5efbe51 100644
 +        config.weatherApp = json == null ? "" : string(json, "weather_app", "io.github.sumyabazar1.weather");
 +        // add_tile: the App library as a "+ Add app" tile after the last app instead of a pill row.
 +        config.addTile = json != null && bool(json, "add_tile", false);
++        // all_apps_tile: with add_tile, an "All apps" tile after it that opens apps without adding them.
++        config.allAppsTile = json != null && bool(json, "all_apps_tile", false);
 +        // key_filter_home_only: InputKeyService filters keys only while Home is on screen (held Volume ramps in apps).
 +        config.keyFilterHomeOnly = json != null && bool(json, "key_filter_home_only", false);
 +        if (json != null) config.voiceSearchApp = string(json, "voice_search_app", config.voiceSearchApp);
@@ -3419,11 +3481,257 @@ index 148ff50..15d1c90 100644
 +        }
 +    }
  }
+diff --git a/launcher/app/src/main/java/com/gathin/tvhome/HomeCover.java b/launcher/app/src/main/java/com/gathin/tvhome/HomeCover.java
+new file mode 100644
+index 0000000..f0a1b40
+--- /dev/null
++++ b/launcher/app/src/main/java/com/gathin/tvhome/HomeCover.java
+@@ -0,0 +1,191 @@
++package com.gathin.tvhome;
++
++import android.accessibilityservice.AccessibilityService;
++import android.content.BroadcastReceiver;
++import android.content.Context;
++import android.content.Intent;
++import android.content.IntentFilter;
++import android.graphics.Bitmap;
++import android.graphics.PixelFormat;
++import android.os.Handler;
++import android.os.Looper;
++import android.view.View;
++import android.view.Window;
++import android.view.WindowManager;
++import android.widget.ImageView;
++
++/**
++ * stock_home_redirect, without the stock home flashing. Where the stock launcher has to stay enabled (Google TV:
++ * launcherx alone shows voice search results and answers the YouTube button) it outranks this launcher as Home, so
++ * every Home press first draws it, and the window-event redirect can only bring this launcher back once it is on
++ * screen (0.4 to 1.2 s). Android announces a Home press before starting any Home (ACTION_CLOSE_SYSTEM_DIALOGS,
++ * reason "homekey"), so the helper lays the last picture of this Home over the screen at that moment, as an
++ * accessibility overlay, and lifts it once MainActivity is resumed again. Keys are never filtered, so held keys
++ * keep repeating; voice search results come from a deep link, not the Home key, and are not covered.
++ */
++final class HomeCover {
++    /** Lifted after this long even if Home never came back, so the screen can never stay covered. */
++    private static final long MAX_COVER_MS = 1500;
++
++    /** The last frame of Home, half size, taken as Home went to the background. */
++    private static volatile Bitmap snapshot;
++    private static HomeCover active;
++
++    private final AccessibilityService service;
++    private final WindowManager windows;
++    private final Handler main = new Handler(Looper.getMainLooper());
++    private final Runnable lift = this::hide;
++    private final Runnable openHome;
++    private ImageView view;
++
++    private final BroadcastReceiver homeKey = new BroadcastReceiver() {
++        @Override
++        public void onReceive(Context context, Intent intent) {
++            android.util.Log.i("HomeCover", "close dialogs, reason=" + intent.getStringExtra("reason")
++                    + ", home resumed=" + MainActivity.resumed);
++            if (!"homekey".equals(intent.getStringExtra("reason"))) return;
++            // Open Home at once, live. The stock home still arrives behind it (up to ~1 s later on the tested TV)
++            // and comes to the front; its window is covered the moment it is added (coverNow), before it draws.
++            openHome.run();
++        }
++    };
++
++    private HomeCover(AccessibilityService service, Runnable openHome) {
++        this.service = service;
++        this.openHome = openHome;
++        this.windows = (WindowManager) service.getSystemService(Context.WINDOW_SERVICE);
++    }
++
++    /**
++     * Starts listening for the Home key's announcement; returns the cover to {@link #stop} later. Below Android 13
++     * there is no exported flag to pass; the system is the only sender of this broadcast from Android 12 on.
++     */
++    @android.annotation.SuppressLint("UnspecifiedRegisterReceiverFlag")
++    static HomeCover start(AccessibilityService service, Runnable openHome) {
++        HomeCover cover = new HomeCover(service, openHome);
++        IntentFilter filter = new IntentFilter(Intent.ACTION_CLOSE_SYSTEM_DIALOGS);
++        // Sent by the system, so a receiver closed to other apps still gets it.
++        if (android.os.Build.VERSION.SDK_INT >= 33) {
++            service.registerReceiver(cover.homeKey, filter, Context.RECEIVER_NOT_EXPORTED);
++        } else {
++            service.registerReceiver(cover.homeKey, filter);
++        }
++        active = cover;
++        return cover;
++    }
++
++    void stop() {
++        try {
++            service.unregisterReceiver(homeKey);
++        } catch (RuntimeException ignored) {
++        }
++        hide();
++        if (active == this) active = null;
++    }
++
++    /** The stock home's window was just added: cover it before it draws, and bring Home back. */
++    void coverNow() {
++        show();
++        stockSeen = true;
++        openHome.run();
++        // Home is opened over the stock home now; lift once it has had time to draw. A stock home that comes
++        // back to the top before then calls this again, which keeps the cover up.
++        main.removeCallbacks(lift);
++        main.postDelayed(lift, BACK_ON_TOP_MS);
++    }
++
++    /** From pushing Home back over the stock home to lifting the cover. */
++    private static final long BACK_ON_TOP_MS = 300;
++
++    /** The stock home's window has been added under this cover since it went up: Home can now come back over it. */
++    private boolean stockSeen;
++
++    private void show() {
++        Bitmap frame = snapshot;
++        if (view != null) {
++            // Another Home press while covered: the stock home is coming again, so keep covering.
++            main.removeCallbacks(lift);
++            main.postDelayed(lift, MAX_COVER_MS);
++            return;
++        }
++        ImageView v = new ImageView(service);
++        v.setScaleType(ImageView.ScaleType.FIT_XY);
++        // No picture of Home yet: Home's own dark background still hides the stock home.
++        v.setBackgroundColor(0xFF05070D);
++        if (frame != null) v.setImageBitmap(frame);
++        v.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
++        WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
++                WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT,
++                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
++                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
++                        | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN | WindowManager.LayoutParams.FLAG_FULLSCREEN,
++                PixelFormat.OPAQUE);
++        try {
++            windows.addView(v, lp);
++            view = v;
++            android.util.Log.i("HomeCover", "cover shown, snapshot=" + (frame != null));
++            main.postDelayed(lift, MAX_COVER_MS);
++        } catch (RuntimeException e) {
++            // no overlay on this firmware: the redirect still runs, only the flash shows
++            android.util.Log.w("HomeCover", "no overlay: " + e);
++        }
++    }
++
++    private void hide() {
++        main.removeCallbacks(lift);
++        stockSeen = false;
++        if (view == null) return;
++        android.util.Log.i("HomeCover", "cover lifted");
++        try {
++            windows.removeViewImmediate(view);
++        } catch (RuntimeException ignored) {
++        }
++        view = null;
++    }
++
++    /** After Home has the window focus: the switch from the stock home is over by then, give it a moment more. */
++    private static final long SETTLED_MS = 150;
++    /** After Home's own window came to the front: one or two frames for it to draw under the cover. */
++    private static final long ON_TOP_MS = 150;
++
++    /** Home's window is the one in front again (a window event): lift the cover as soon as it has drawn. */
++    void homeOnTop() {
++        if (view == null || !stockSeen) return;
++        main.removeCallbacks(lift);
++        main.postDelayed(lift, ON_TOP_MS);
++    }
++
++    /** MainActivity has the window focus again: lift the cover once the transition under it has finished. */
++    static void homeFocused(View root) {
++        HomeCover c = active;
++        if (c == null || c.view == null || !c.stockSeen) return;
++        c.main.removeCallbacks(c.lift);
++        c.main.postDelayed(c.lift, SETTLED_MS);
++    }
++
++    /** MainActivity resumed over the stock home: lift the cover as soon as it has drawn. */
++    static void homeResumedAfterStock() {
++        HomeCover c = active;
++        if (c != null) c.main.post(c::homeOnTop);
++    }
++
++    /**
++     * MainActivity is leaving: keep its last frame, half size, for the next Home press. Recorded as a Picture and
++     * rendered on the GPU, since the tiles are hardware bitmaps that a software canvas cannot draw (PixelCopy of
++     * the window came back black on the tested TV).
++     */
++    static void takeSnapshot(Window window, View root) {
++        if (active == null || root.getWidth() == 0 || root.getHeight() == 0) return;
++        try {
++            android.graphics.Picture picture = new android.graphics.Picture();
++            android.graphics.Canvas canvas = picture.beginRecording(root.getWidth(), root.getHeight());
++            window.getDecorView().draw(canvas);
++            picture.endRecording();
++            if (android.os.Build.VERSION.SDK_INT >= 28) {
++                snapshot = Bitmap.createBitmap(picture, root.getWidth() / 2, root.getHeight() / 2, Bitmap.Config.HARDWARE);
++            }
++        } catch (RuntimeException e) {
++            android.util.Log.w("HomeCover", "snapshot failed: " + e);
++        }
++    }
++}
 diff --git a/launcher/app/src/main/java/com/gathin/tvhome/HomeKeyService.java b/launcher/app/src/main/java/com/gathin/tvhome/HomeKeyService.java
-index 233f982..184d99a 100644
+index 233f982..d6cb089 100644
 --- a/launcher/app/src/main/java/com/gathin/tvhome/HomeKeyService.java
 +++ b/launcher/app/src/main/java/com/gathin/tvhome/HomeKeyService.java
-@@ -317,9 +317,27 @@ public class HomeKeyService extends AccessibilityService {
+@@ -92,6 +92,8 @@ public class HomeKeyService extends AccessibilityService {
+     private boolean steppingOut;
+     /** The bound helper, so the opt-in broadcast can arm it without waiting for a new connection. */
+     private static HomeKeyService running;
++    /** stock_home_redirect: covers the stock home while a Home press brings this launcher back; null when off. */
++    private HomeCover cover;
+ 
+     @Override
+     protected void onServiceConnected() {
+@@ -138,6 +140,10 @@ public class HomeKeyService extends AccessibilityService {
+     @Override
+     public void onDestroy() {
+         if (running == this) running = null;
++        if (cover != null) {
++            cover.stop();
++            cover = null;
++        }
+         stopWaitingForUnlock();
+         if (screenOnReceiver != null) unregisterReceiver(screenOnReceiver);
+         if (standbyExit != null) {
+@@ -224,9 +230,14 @@ public class HomeKeyService extends AccessibilityService {
+         AccessibilityServiceInfo info = getServiceInfo();
+         if (info != null && (!stockHome.isEmpty() || !powerOnLiveTv.isEmpty() || watchFront)) {
+             info.eventTypes |= AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED;
++            // TYPE_WINDOWS_CHANGED (for HomeCover) stays off with the cover.
+             setServiceInfo(info);
+         }
+         if (!stockHome.isEmpty() || !powerOnLiveTv.isEmpty()) probeAtBoot();
++        if (cover != null) cover.stop();
++        // HomeCover (a still of Home over the stock home) is off: on the tested Xiaomi the firmware keeps raising
++        // the stock home for ~1 s after a Home press, so covering it read as a 1 s freeze. Kept for other TVs.
++        cover = null;
+         armStandbyExit();
+         holdAppKeys = RemoteKeys.parseHoldAppKeys(config.appKeys);
+         holdAppScancodes = RemoteKeys.parseHoldAppScancodes(config.appKeys);
+@@ -300,6 +311,13 @@ public class HomeKeyService extends AccessibilityService {
+ 
+     @Override
+     public void onAccessibilityEvent(AccessibilityEvent event) {
++        if (event.getEventType() == AccessibilityEvent.TYPE_WINDOWS_CHANGED) {
++            // Any window change that leaves the stock home as the top app window, a new one or its old one coming back.
++            if (cover != null && !afterAssistant(SystemClock.elapsedRealtime(), assistantAt) && stockHomeOnTop()) {
++                cover.coverNow();
++            }
++            return;
++        }
+         if (event.getEventType() != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return;
+         // app_keys "front:" entries: only activities count, so a toast or the volume bar doesn't change the app in front.
+         if ((!frontAppKeys.isEmpty() || !frontAppScancodes.isEmpty())
+@@ -317,9 +335,42 @@ public class HomeKeyService extends AccessibilityService {
              openHome();
              return;
          }
@@ -3431,6 +3739,10 @@ index 233f982..184d99a 100644
 +        // The Assistant in front: voice search results come next, in the stock home's own screen (Google TV).
 +        if (ASSISTANT.contentEquals(event.getPackageName() == null ? "" : event.getPackageName())) {
 +            assistantAt = SystemClock.elapsedRealtime();
++        }
++        // This launcher's own window in front again: the cover over the stock home can go.
++        if (cover != null && getPackageName().contentEquals(event.getPackageName() == null ? "" : event.getPackageName())) {
++            cover.homeOnTop();
 +        }
 +        // stock_home_redirect: the firmware turned the stock launcher back on and its home screen came up. Not
 +        // right after the Assistant: Google TV lists voice search results in that same screen.
@@ -3440,6 +3752,17 @@ index 233f982..184d99a 100644
 +                && !afterAssistant(SystemClock.elapsedRealtime(), assistantAt)) {
 +            openHome(true);
 +        }
++    }
++
++    /** Whether the top application window (getWindows lists them front first) belongs to the stock home. */
++    private boolean stockHomeOnTop() {
++        for (android.view.accessibility.AccessibilityWindowInfo w : getWindows()) {
++            if (w.getType() != android.view.accessibility.AccessibilityWindowInfo.TYPE_APPLICATION) continue;
++            android.view.accessibility.AccessibilityNodeInfo root = w.getRoot();
++            CharSequence pkg = root == null ? null : root.getPackageName();
++            return pkg != null && stockHomePackage.contentEquals(pkg);
++        }
++        return false;
 +    }
 +
 +    /** Google TV's voice assistant; its search results open in launcherx's HomeActivity. */
@@ -3453,7 +3776,7 @@ index 233f982..184d99a 100644
      }
  
      /** How long power_on_home stays armed after the screen turns on without a reboot. */
-@@ -413,10 +431,17 @@ public class HomeKeyService extends AccessibilityService {
+@@ -413,10 +464,17 @@ public class HomeKeyService extends AccessibilityService {
      }
  
      private void openHome() {
@@ -3531,10 +3854,10 @@ index 4b8f574..977a0e0 100644
          if (consumeVolumeKeys) VolumeKeys.stop();
          super.onDestroy();
 diff --git a/launcher/app/src/main/java/com/gathin/tvhome/MainActivity.java b/launcher/app/src/main/java/com/gathin/tvhome/MainActivity.java
-index a5acd79..c83d6bd 100644
+index a5acd79..96c29b7 100644
 --- a/launcher/app/src/main/java/com/gathin/tvhome/MainActivity.java
 +++ b/launcher/app/src/main/java/com/gathin/tvhome/MainActivity.java
-@@ -234,10 +234,23 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+@@ -234,10 +234,25 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
      private boolean dockRow;
      /** config single_row: every app in the dock's row, scrolling sideways, no grid below. */
      private boolean singleRow;
@@ -3543,6 +3866,8 @@ index a5acd79..c83d6bd 100644
      /** The highlight springs past its target (config.xml, focus_overshoot); false goes straight there. */
      private boolean focusOvershoot;
      /** Festive skin from the theme (see Festival); applied while it is active today. */
++    /** Whether Home is on screen, for HomeCover (a Home press on Home needs no cover). */
++    static volatile boolean resumed;
      private Festival festival = Festival.NONE;
 +    /** The theme's festival before resolving; with "auto" it names a new festival on each festival day. */
 +    private Festival festivalSource = Festival.NONE;
@@ -3558,7 +3883,7 @@ index a5acd79..c83d6bd 100644
      private boolean festive;
      private DiyaDrawable diya;
      private BellDrawable bell;
-@@ -374,7 +387,13 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+@@ -374,7 +389,13 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
              updateRace();
              // The pill follows the network callbacks and each return to Home; only the diya's flame follows the
              // signal level, so only it needs this minute's binder calls (about 7 ms on the UI thread).
@@ -3572,7 +3897,7 @@ index a5acd79..c83d6bd 100644
              sky.update();
              wallpaperPlayer.update();
              handler.postDelayed(this, MINUTE_MS);
-@@ -406,8 +425,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+@@ -406,8 +427,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
          reducedMotion = cfg.reducedMotion;
          dockRow = cfg.dockRow;
          singleRow = cfg.singleRow;
@@ -3584,7 +3909,7 @@ index a5acd79..c83d6bd 100644
          festive = festival.active(LocalDate.now());
          liveTvPkg = cfg.liveTvPackage;
          idleClockMs = cfg.homeIdleClockMinutes * MINUTE_MS;
-@@ -433,7 +454,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+@@ -433,7 +456,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
          getWindow().setBackgroundDrawable(null);
          wallpaperPlayer = new WallpaperPlayer(this, root, cfg);
          sky = findViewById(R.id.sky);
@@ -3596,7 +3921,7 @@ index a5acd79..c83d6bd 100644
          glass = findViewById(R.id.glass);
          glass.setStyle(cfg.glassStyle);
          if (festive) glass.setAccent(festival.accentColor());
-@@ -462,6 +486,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+@@ -462,6 +488,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
          // still follows the dock.
          if (!cfg.dockTitle) hero.setVisibility(View.GONE);
          greeting = findViewById(R.id.greeting);
@@ -3604,7 +3929,7 @@ index a5acd79..c83d6bd 100644
          clockBlock = findViewById(R.id.leftBlock);
          greetingColor = greeting.getCurrentTextColor();
          if (!cfg.showGreeting) greeting.setVisibility(View.GONE);
-@@ -500,6 +525,17 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+@@ -500,6 +527,17 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
          lunar = cfg.lunarDate;
          lunarOffset = Lunar.offsetFor(cfg.lunarUtcOffset, Locale.getDefault());
          if (lunar) lunarDate.setVisibility(View.VISIBLE);
@@ -3622,7 +3947,7 @@ index a5acd79..c83d6bd 100644
          greetingName = cfg.greetingName;
          if (cfg.dateBelowClock) moveDateBelowClock();
          if (shamsi) {
-@@ -572,7 +608,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+@@ -572,7 +610,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
              }
          });
          ((GridLayoutManager) grid.getLayoutManager()).setSpanSizeLookup(new GridLayoutManager.SpanSizeLookup() {
@@ -3631,7 +3956,7 @@ index a5acd79..c83d6bd 100644
          });
          grid.setHasFixedSize(true);
          grid.setItemAnimator(null);
-@@ -735,6 +771,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+@@ -735,6 +773,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
          });
          btnLibraryTop.setVisibility(cfg.libraryButton && cfg.appLibrary ? View.VISIBLE : View.GONE);
          addTopBarApps(cfg.topBarApps, cfg.launchActions);
@@ -3640,7 +3965,7 @@ index a5acd79..c83d6bd 100644
          iconOnlyButtons = cfg.iconOnlyButtons;
          topMenu = cfg.topMenu;
          wifiIconOnly = iconOnlyButtons && cfg.wifiLabelWidth <= 0;
-@@ -808,7 +846,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+@@ -808,7 +848,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                          .setDuration(reducedMotion ? Motion.REDUCED_MS : 160).start());
              }
          }
@@ -3649,12 +3974,14 @@ index a5acd79..c83d6bd 100644
  
          // Hide the glass when focus leaves the tiles.
          getWindow().getDecorView().getViewTreeObserver().addOnGlobalFocusChangeListener((oldF, newF) -> {
-@@ -940,8 +978,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+@@ -940,8 +980,13 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
      @Override
      protected void onResume() {
          super.onResume();
 +        // key_filter_home_only: the key helper filters only while Home is in front.
 +        InputKeyService.homeInFront(true);
++        resumed = true;
++        HomeCover.homeResumedAfterStock();
          // A festival that started or ended while Home was in the background: rebuild with or without it.
 -        if (festive != festival.active(LocalDate.now())) {
 +        Festival dayFestival = festivalSource.resolve(LocalDate.now());
@@ -3662,7 +3989,7 @@ index a5acd79..c83d6bd 100644
              recreate();
              return;
          }
-@@ -983,13 +1024,14 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+@@ -983,13 +1028,14 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
              pillsShown = true;
          }
          if (showStats) startStats();
@@ -3678,15 +4005,65 @@ index a5acd79..c83d6bd 100644
                  lastPetalShower = today;
                  handler.postDelayed(this::playPetalShower, 450);
              }
-@@ -1151,6 +1193,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+@@ -1150,7 +1196,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+ 
      @Override
      protected void onPause() {
++        // stock_home_redirect: this frame is what covers the stock home on the next Home press.
++        HomeCover.takeSnapshot(getWindow(), root);
++        resumed = false;
          super.onPause();
 +        InputKeyService.homeInFront(false);
          root.removeCallbacks(showIdleClock);
          endReorder();   // Home or another app while reordering keeps the order so far
          wallpaperPlayer.stop();
-@@ -2274,6 +2317,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+@@ -1204,6 +1254,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+     public void onWindowFocusChanged(boolean hasFocus) {
+         super.onWindowFocusChanged(hasFocus);
+         if (hasFocus) {
++            HomeCover.homeFocused(root);
+             startPendingSettingsReorder();
+             if (libraryFocusPending && appLibrary == null) focusLibrary();
+             showCardPrompt();
+@@ -1590,16 +1641,36 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+ 
+     // ---- glass highlight -------------------------------------------------------------------------
+ 
++    @Override
++    public void onAllAppsRequested() {
++        openLibrary(true, true);
++    }
++
+     @Override
+     public void onLibraryRequested() {
++        openLibrary(libraryOkOpens, false);
++    }
++
++    /**
++     * The App library. {@code okOpens}: OK starts the app (the "All apps" tile) rather than adding it to Home;
++     * {@code fromAllApps}: focus goes back to that tile when it closes.
++     */
++    private void openLibrary(boolean okOpens, boolean fromAllApps) {
+         if (appLibrary != null) appLibrary.close();
+         if (openPopup != null) openPopup.dismiss();
+         libraryFocusPending = false;
+         libraryFromTopBar = false;
+         libraryFromVpnPill = false;
+-        appLibrary = new AppLibraryDialog(this, animations, reducedMotion, appLibrarySelection, libraryOkOpens, adapter::containsPackage, () -> reloadApps(false), () -> {
++        appLibrary = new AppLibraryDialog(this, animations, reducedMotion, appLibrarySelection, okOpens, adapter::containsPackage, () -> reloadApps(false), () -> {
+             appLibrary = null;
+             openPopup = null;
++            if (fromAllApps) {
++                grid.post(() -> {
++                    View tile = grid.findViewById(R.id.btnAllApps);
++                    if (tile != null) tile.requestFocus();
++                });
++                return;
++            }
+             if (libraryFromTopBar) {
+                 libraryFromTopBar = false;
+                 btnLibraryTop.requestFocus();
+@@ -2274,6 +2345,17 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                  if (adapter.isLibraryAt(count)) focusLibrary();
                  return true;
              }
@@ -3695,10 +4072,16 @@ index a5acd79..c83d6bd 100644
 +                focusLibrary();
 +                return true;
 +            }
++            // all_apps_tile: the "All apps" tile sits right under this one.
++            if (addTileInGrid && position + COLUMNS == count + 1 && adapter.isAllAppsAt(count + 1)) {
++                View tile = grid.findViewById(R.id.btnAllApps);
++                if (tile != null) tile.requestFocus();
++                return true;
++            }
              target = Math.min(position + COLUMNS, count - 1);
          }
          focusTile(target);
-@@ -2511,7 +2559,20 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+@@ -2511,7 +2593,20 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
              else if (hour < 22) res = R.string.good_evening;
              else res = R.string.good_night;
          }
@@ -3720,7 +4103,7 @@ index a5acd79..c83d6bd 100644
          if (!festiveGreeting.isEmpty()) {
              greeting.setText(festiveGreeting);
              greeting.setTextColor(liftTowardsWhite(festival.accentColor(), 0.25f));
-@@ -2727,6 +2788,70 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+@@ -2727,6 +2822,70 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
          pill.getLayoutParams().width = Math.round(42 * density);
      }
  
@@ -4461,11 +4844,22 @@ index 0000000..daac353
 +    android:drawableStart="@drawable/ic_wx_sun"
 +    android:visibility="gone"
 +    android:nextFocusDown="@+id/grid" />
+diff --git a/launcher/app/src/main/res/values/ids_opentv.xml b/launcher/app/src/main/res/values/ids_opentv.xml
+new file mode 100644
+index 0000000..40406e7
+--- /dev/null
++++ b/launcher/app/src/main/res/values/ids_opentv.xml
+@@ -0,0 +1,5 @@
++<?xml version="1.0" encoding="utf-8"?>
++<resources>
++    <!-- The "All apps" tile after "+ Add app" (add_tile with all_apps_tile), for giving focus back to it. -->
++    <item name="btnAllApps" type="id" />
++</resources>
 diff --git a/launcher/app/src/main/res/values/strings.xml b/launcher/app/src/main/res/values/strings.xml
-index 635bced..9e61493 100644
+index 635bced..7247447 100644
 --- a/launcher/app/src/main/res/values/strings.xml
 +++ b/launcher/app/src/main/res/values/strings.xml
-@@ -17,6 +17,39 @@
+@@ -17,6 +17,40 @@
      <string name="good_night">Good night</string>
      <string name="festival_dussehra_greeting">Happy Dussehra</string>
      <string name="festival_diwali_greeting">Happy Diwali</string>
@@ -4500,6 +4894,7 @@ index 635bced..9e61493 100644
 +    <string name="festival_countdown_tomorrow">%1$s tomorrow</string>
 +    <string name="festival_countdown_days">%1$s in %2$d days</string>
 +    <string name="add_app">Add app</string>
++    <string name="all_apps">All apps</string>
 +    <string name="voice_search_prompt">Hold the mic button and say what to search</string>
 +    <string name="search">Search</string>
      <string name="ethernet">Ethernet</string>
