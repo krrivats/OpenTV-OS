@@ -1,6 +1,6 @@
 {
   "dock_apps": [
-    "org.smarttube.stable",
+    "com.google.android.youtube.tv",
     "in.startv.hotstar",
     "com.netflix.ninja",
     "com.amazon.amazonvideo.livingroom"
@@ -10,8 +10,7 @@
     "com.mitv.livetv",
     "com.xiaomi.mitv.manualhelp",
     "com.xiaomi.mitv.tvmanager",
-    "io.github.sumyabazar1.weather",
-    "com.google.android.youtube.tv"
+    "io.github.sumyabazar1.weather"
   ],
   "app_library": true,
   "show_library_pill": true,
@@ -42,9 +41,8 @@
   ],
   "weather_pill": true,
   "weather_app": "io.github.sumyabazar1.weather",
-  "key_filter": true,
-  "key_filter_home_only": true,
-  "app_keys": [
-    "KEYCODE_BUTTON_3:org.smarttube.stable"
-  ]
+  "key_filter": false,
+  "key_filter_home_only": false,
+  "home_long_press_home": false,
+  "stock_home_redirect": "com.google.android.apps.tv.launcherx"
 }

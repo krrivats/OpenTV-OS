@@ -13,10 +13,10 @@ Android 11, 1.5 GB RAM, 4 GB storage), with its fix. Read this when something on
 | 4. Storage | Under 400 MB free → `pm trim-caches 2G` (caches only) | The first TV was 99% full and the install failed |
 | 5. Clean-up | Asks per group and per app (`lists/debloat.json`), then `pm disable-user` one package at a time, each written to `disabled-by-setup.txt` | Disable, never uninstall |
 | 5b. Setup wizard | On Google TV, disables `setupwraith` **unless** it owns the saved Wi-Fi network (`dumpsys wifi`, `cname=`) | With the stock home off it can crash-loop Home; if it owns Wi-Fi, disabling it drops Wi-Fi |
-| 6. Apps | Installs the OpenTV home screen, Weather, World Clock, Remote Buttons; optionally SmartTube (latest stable for the TV's CPU, SHA-256 checked) and turns stock YouTube off | YouTube links then open in SmartTube |
-| 7. Home | Starts the new home, disables the stock one, sets the new one as Home, then checks; if Home is not OpenTV it turns the stock home back on | The Home guard from CleanYourTV |
+| 6. Apps | Installs the OpenTV home screen, Weather and World Clock; optionally SmartTube (latest stable for the TV's CPU, SHA-256 checked) next to stock YouTube | Voice search plays in stock YouTube |
+| 7. Home | Starts the new home and sets it as Home. A plain Android TV launcher is disabled (then checked, and turned back on if Home is not OpenTV); the Google TV home is kept on for voice search | The Home guard from CleanYourTV |
 | 8. Theme | Pushes `theme/config.json` (with your name and city) and the festival wallpapers, then restarts Home | |
-| 9. Remote | Turns on the launcher's key helper (YouTube button → SmartTube, from Home only) and Remote Buttons (app redirects, never sees keys) | See "Remote buttons" below |
+| 9. Home helper | Turns on the launcher's HomeKeyService (window events only, no key filtering) and checks it is running | See the trade-off below |
 | 10. Finish | Screenshot into the backup folder, offers to turn debugging off | |
 
 ## Settings you can change (`theme/config.json`)
@@ -38,19 +38,21 @@ Edit it, then run setup again (it is safe to repeat). The keys come from
 Festival wallpapers are `theme/wallpapers/festival-<name>.jpg`; redraw them with `python theme/make_festival_wallpapers.py`
 (needs Python with Pillow) or drop in your own 1920×1080 JPEG with the same name.
 
-## Remote buttons, and why they work the way they do
+## Remote buttons, Home and voice search: the trade-off
 
-- **Held Volume moving one step per press** is caused by any accessibility service that *filters key events*
-  (CleanYourTV's key helpers, Key Mapper's normal mode). So the helper here filters keys **only while the OpenTV Home is
-  on screen** (`key_filter_home_only`): inside every app, keys are untouched and Volume ramps.
-- **Which app owns each app button** is set by the TV: `adb shell dumpsys window policy | findstr BUTTON`. On the
-  tested Xiaomi, Netflix (`BUTTON_6`) and Prime (`BUTTON_7`) belong to Xiaomi's handler and work as they are, while
-  YouTube (`BUTTON_3`) belongs to the Google TV home. With that turned off only the key helper can catch the YouTube
-  button, so it opens SmartTube from Home only.
-- Turning the Google TV home back on brings the button back everywhere, but on that firmware it then reclaims Home and
-  flashes on every Home press (`set-home-activity` and the HOME role do not stick). We kept the instant Home.
-- **Remote Buttons** (the app on Home) changes what an app button opens by redirecting the app it opens: "when Prime
-  Video opens, open JioHotstar". It only hears which app is in front (`capabilities=0`), never keys.
+Tested on the Xiaomi MiTV-AXFR2; other Google TVs are likely the same.
+
+- **The Google TV home (launcherx) stays on.** Only it shows the Assistant's voice search results and receives the
+  remote's YouTube button (`BUTTON_3` in `dumpsys window policy`). With it off, voice search says "having trouble" and the
+  YouTube button does nothing.
+- **It always gets the Home press first.** It is a system app with a higher priority than any downloaded launcher,
+  so Android picks it even though OpenTV is the saved default and holds the HOME role. The launcher's HomeKeyService
+  (`stock_home_redirect`) sees its screen appear and brings OpenTV back (0.4 to 1.2 s), leaving voice search results
+  alone for 30 s after the Assistant.
+- **Why not catch the Home key directly?** A helper that filters key events (`key_filter` true, `home_long_press_home`)
+  does give an instant Home, but this firmware then drops held-key repeat: Volume moves one step per press. Choose it in
+  `theme/config.json` if you prefer instant Home over a ramping Volume.
+- **SmartTube** is an extra app; stock YouTube is not turned off.
 
 ## Problems we hit, and the fixes
 

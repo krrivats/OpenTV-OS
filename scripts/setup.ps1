@@ -96,14 +96,18 @@ if ($apps.Count -gt 0) {
     Say '   Apps on this TV. Answer n for the ones nobody uses (they are turned off, not deleted):'
     foreach ($a in $apps) { if (-not (Yes "   Keep $($a.Value)?" $true)) { $toDisable[$a.Name] = $a.Value } }
 }
-$smartTube = Yes 'Install SmartTube (free, open-source YouTube without ads) and use it instead of YouTube?' $true
+$smartTube = Yes 'Also install SmartTube (free YouTube app without ads)? Stock YouTube stays, for voice search' $true
 
 Step 'Turning off the chosen apps'
 foreach ($k in $toDisable.Keys) { Disable-Pkg $k $toDisable[$k] }
 
-# Google TV's setup wizard claims Home behind the stock launcher; with that launcher off it can crash-loop Home.
+# Google TV's home (launcherx) stays on: it alone shows voice search results and answers the remote's YouTube
+# button. It always takes the Home press first (a system app outranks OpenTV), and the launcher's HomeKeyService
+# (stock_home_redirect, window events only) brings OpenTV straight back; held Volume keeps ramping.
 $claimants = Sh 'cmd package query-activities --brief -a android.intent.action.MAIN -c android.intent.category.HOME'
-if ($claimants -match 'com.google.android.tungsten.setupwraith/') {
+$keepGoogleHome = $claimants -match 'com.google.android.apps.tv.launcherx/'
+# Google TV's setup wizard claims Home behind the stock launcher; only with that launcher off can it crash-loop Home.
+if (-not $keepGoogleHome -and $claimants -match 'com.google.android.tungsten.setupwraith/') {
     $cname = Sh "dumpsys wifi | grep -o 'cname=[^ ]*' | sort -u"
     if ($cname -match 'setupwraith') {
         throw 'The setup wizard owns this TV''s saved Wi-Fi network; turning it off would drop Wi-Fi and this connection. Re-add the Wi-Fi network from TV Settings (so the network belongs to Settings), then run setup again.'
@@ -114,7 +118,7 @@ if ($claimants -match 'com.google.android.tungsten.setupwraith/') {
 # ---- 6. Apps -------------------------------------------------------------------------------------------------
 Step 'Installing the OpenTV apps'
 $appsDir = Join-Path $Kit 'apps'
-foreach ($a in @(@('OpenTV-Launcher.apk', 'OpenTV home screen'), @('Weather.apk', 'Weather'), @('WorldClock.apk', 'World Clock'), @('RemoteButtons.apk', 'Remote Buttons'))) {
+foreach ($a in @(@('OpenTV-Launcher.apk', 'OpenTV home screen'), @('Weather.apk', 'Weather'), @('WorldClock.apk', 'World Clock'))) {
     $apk = Join-Path $appsDir $a[0]
     if (-not (Test-Path $apk)) { throw "apps\$($a[0]) is missing: download the full OpenTV-OS zip from the GitHub Releases page." }
     Install-Apk $apk $a[1]
@@ -134,8 +138,6 @@ if ($smartTube) {
         $want = "$($asset.digest)" -replace '^sha256:', ''
         if ($want -and $want -ne (Get-FileHash $dl -Algorithm SHA256).Hash.ToLower()) { Remove-Item $dl; throw 'SmartTube download failed its SHA-256 check; nothing was installed.' }
         Install-Apk $dl 'SmartTube'
-        # Stock YouTube off: YouTube links and search results then open the video in SmartTube.
-        Disable-Pkg 'com.google.android.youtube.tv' 'stock YouTube (SmartTube replaces it)'
     }
 }
 
@@ -156,18 +158,20 @@ if ($set -match 'Error') { throw "Could not set the new Home ($set); the stock h
 $start = Sh 'am start -W -a android.intent.action.MAIN -c android.intent.category.HOME -n com.gathin.tvhome/.MainActivity'
 if ($start -notmatch 'Status: ok') { throw "The OpenTV home did not start; the stock home was left on. $start" }
 Sh 'pm grant com.gathin.tvhome android.permission.ACCESS_FINE_LOCATION 2>/dev/null; cmd package compile -m speed -f com.gathin.tvhome' | Out-Null
-if ($stock -ne 'none') {
+if ($stock -eq 'com.google.android.apps.tv.launcherx') { $stock = 'kept' }
+if ($stock -notin @('none', 'kept')) {
     Sh "pm disable-user --user 0 $stock" | Out-Null
     Add-Content -Encoding utf8 $disabledLog $stock
     "stock-home=$stock" | Out-File -Encoding utf8 (Join-Path $backup 'stock-home.txt')
 }
 Sh 'cmd package set-home-activity --user 0 com.gathin.tvhome/.MainActivity' | Out-Null
 $homeNow = (Sh 'cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME').Split("`n")[-1].Trim()
-if ($homeNow -notlike 'com.gathin.tvhome/*') {
+if ($stock -eq 'kept') {
+    Good 'OpenTV is Home (the Google TV home stays on for voice search; the Home button always opens OpenTV)'
+} elseif ($homeNow -notlike 'com.gathin.tvhome/*') {
     if ($stock -ne 'none') { Sh "pm enable --user 0 $stock" | Out-Null }
     throw "Home resolves to '$homeNow', not OpenTV; the stock home ($stock) was turned back on."
-}
-Good 'OpenTV is Home'
+} else { Good 'OpenTV is Home' }
 
 # ---- 8. Theme: your name, city, festivals, weather, wallpapers ------------------------------------------------
 Step 'Applying your theme'
@@ -201,12 +205,17 @@ Good 'theme on the TV'
 
 # ---- 9. Remote buttons ---------------------------------------------------------------------------------------
 Step 'Remote buttons'
-Enable-Service 'com.gathin.tvhome/.InputKeyService'          # YouTube button -> SmartTube, from the Home screen only
-Enable-Service 'io.github.opentvos.remotebuttons/.RedirectService'   # app redirects; never sees keys
+Enable-Service 'com.gathin.tvhome/.HomeKeyService'           # Google TV's home screen -> OpenTV (stock_home_redirect)
 Sh 'cmd appops set com.gathin.tvhome AUTO_START allow 2>/dev/null; appops write-settings 2>/dev/null; true' | Out-Null
-# Restart Home so it reads the theme, then put the key helpers back (a force stop takes them off the list).
-Sh 's=$(settings get secure enabled_accessibility_services); am force-stop com.gathin.tvhome; sleep 1; settings put secure enabled_accessibility_services ""; settings put secure enabled_accessibility_services "$s"; settings put secure accessibility_enabled 1; am start -a android.intent.action.MAIN -c android.intent.category.HOME -n com.gathin.tvhome/.MainActivity' | Out-Null
-Good 'YouTube button opens SmartTube from Home; held Volume ramps inside apps'
+# Restart Home so it reads the theme, then bind the helper again (a force stop unbinds it). Android sometimes
+# leaves it enabled but unbound after that, so check and retry.
+$svc = Sh 'settings get secure enabled_accessibility_services'
+Sh 'am force-stop com.gathin.tvhome; am start -a android.intent.action.MAIN -c android.intent.category.HOME -n com.gathin.tvhome/.MainActivity' | Out-Null
+for ($i = 0; $i -lt 4; $i++) {
+    Sh ('sleep 2; settings put secure enabled_accessibility_services ""; settings put secure accessibility_enabled 0; sleep 3; settings put secure enabled_accessibility_services "' + $svc + '"; settings put secure accessibility_enabled 1; sleep 5') | Out-Null
+    if ((Sh 'dumpsys accessibility | grep -c "com.gathin.tvhome/com.gathin.tvhome.HomeKeyService\|label=Home button"') -ne '0') { break }
+}
+Good 'Home lands on OpenTV; Volume ramps; voice search and the YouTube button use stock YouTube'
 
 # ---- 10. Done --------------------------------------------------------------------------------------------------
 Start-Sleep -Seconds 4

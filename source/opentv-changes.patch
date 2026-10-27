@@ -292,10 +292,10 @@ index 0000000..aa7ef93
 +}
 diff --git a/addons/remote-buttons/app/src/main/java/io/github/opentvos/remotebuttons/RedirectService.java b/addons/remote-buttons/app/src/main/java/io/github/opentvos/remotebuttons/RedirectService.java
 new file mode 100644
-index 0000000..eb78ec5
+index 0000000..1f9e11d
 --- /dev/null
 +++ b/addons/remote-buttons/app/src/main/java/io/github/opentvos/remotebuttons/RedirectService.java
-@@ -0,0 +1,92 @@
+@@ -0,0 +1,109 @@
 +package io.github.opentvos.remotebuttons;
 +
 +import android.accessibilityservice.AccessibilityService;
@@ -321,7 +321,15 @@ index 0000000..eb78ec5
 +     */
 +    private static final long SETTLE_MS = 350;
 +    /** A one-screen rule (the Google TV home) needs no settling: its screen is the final one, so go at once. */
-+    private static final long SCREEN_SETTLE_MS = 30;
++    private static final long SCREEN_SETTLE_MS = 0;
++    /**
++     * The Assistant shows voice search results in the Google TV home's own screen (tv.google.com deep link, then
++     * launcherx HomeActivity). For this long after the Assistant was in front, a one-screen rule is left alone, so
++     * the results stay; a Home press later still goes to the launcher.
++     */
++    private static final long ASSISTANT_GRACE_MS = 30_000;
++    private static final String ASSISTANT = "com.google.android.katniss";
++    private long assistantAt = -ASSISTANT_GRACE_MS;
 +    /** At most this many redirects in {@link #BURST_MS}, so two rules pointing at each other cannot loop. */
 +    private static final int BURST_MAX = 6;
 +    private static final long BURST_MS = 5000;
@@ -348,8 +356,11 @@ index 0000000..eb78ec5
 +        front = event.getPackageName().toString();
 +        frontClass = event.getClassName() == null ? "" : event.getClassName().toString();
 +        main.removeCallbacks(settle);
++        if (ASSISTANT.equals(front)) assistantAt = SystemClock.elapsedRealtime();
 +        if (Rules.target(rules, front, frontClass) == null) return;
 +        boolean screen = rules.containsKey(Rules.screenKey(front, frontClass));
++        // Voice search results are shown on this screen: leave them up.
++        if (screen && SystemClock.elapsedRealtime() - assistantAt < ASSISTANT_GRACE_MS) return;
 +        main.postDelayed(settle, screen ? SCREEN_SETTLE_MS : SETTLE_MS);
 +    }
 +
@@ -363,19 +374,25 @@ index 0000000..eb78ec5
 +        if (launch == null) return;   // the target is not installed or is turned off: leave the app as it is
 +        recent[recentNext] = now;
 +        recentNext = (recentNext + 1) % BURST_MAX;
-+        launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
++        launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
++        if (!launch.hasCategory(Intent.CATEGORY_HOME)) launch.addFlags(Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
 +        // A screen rule (the Google TV home) swaps one home for another: no transition, so the stock one shows less.
 +        if (rules.containsKey(Rules.screenKey(front, frontClass))) launch.addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION);
 +        startActivity(launch);
 +    }
 +
-+    /** The app's TV entry, else its phone entry, else its Home screen (a launcher has only that). */
++    /**
++     * A launcher's Home entry first: it brings back the Home already running at once, where its TV entry would
++     * build a second copy (1.5 s on a 1.5 GB TV). Otherwise the app's TV entry, else its phone entry.
++     */
 +    static Intent launchIntent(PackageManager pm, String pkg) {
-+        Intent i = pm.getLeanbackLaunchIntentForPackage(pkg);
-+        if (i == null) i = pm.getLaunchIntentForPackage(pkg);
-+        if (i != null) return i;
 +        Intent home = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).setPackage(pkg);
-+        return pm.resolveActivity(home, 0) != null ? home : null;
++        android.content.pm.ResolveInfo ri = pm.resolveActivity(home, 0);
++        if (ri != null && ri.activityInfo != null && pkg.equals(ri.activityInfo.packageName)) {
++            return home.setClassName(pkg, ri.activityInfo.name);
++        }
++        Intent i = pm.getLeanbackLaunchIntentForPackage(pkg);
++        return i != null ? i : pm.getLaunchIntentForPackage(pkg);
 +    }
 +
 +    @Override
@@ -390,10 +407,10 @@ index 0000000..eb78ec5
 +}
 diff --git a/addons/remote-buttons/app/src/main/java/io/github/opentvos/remotebuttons/Rules.java b/addons/remote-buttons/app/src/main/java/io/github/opentvos/remotebuttons/Rules.java
 new file mode 100644
-index 0000000..a6b6a8e
+index 0000000..4214850
 --- /dev/null
 +++ b/addons/remote-buttons/app/src/main/java/io/github/opentvos/remotebuttons/Rules.java
-@@ -0,0 +1,100 @@
+@@ -0,0 +1,103 @@
 +package io.github.opentvos.remotebuttons;
 +
 +import android.content.Context;
@@ -423,8 +440,11 @@ index 0000000..a6b6a8e
 +     * only its home screen (not its other screens) is sent back. The from side names one screen: package/class.
 +     */
 +    static final String HOME = "com.google.android.apps.tv.launcherx/.home.HomeActivity=com.gathin.tvhome";
-+    /** Defaults by the version that added them: an update adds the new ones and keeps the owner's own rules. */
-+    private static final String[][] DEFAULTS = {{DEFAULT}, {HOME}};
++    /**
++     * Defaults for a fresh install: only the Google TV home redirect. YouTube -> SmartTube ({@link #DEFAULT}) is no
++     * longer added by itself, since a family using voice search needs the stock YouTube; add it on the TV if wanted.
++     */
++    private static final String[][] DEFAULTS = {{HOME}};
 +
 +    private Rules() { }
 +
@@ -2809,7 +2829,7 @@ index 3fb54ff..81d4965 100644
      public void onlyTheYellowBandGetsDarkText() {
          assertEquals(0xFF1A1A1A, Forecast.aqiTextColour(55));
 diff --git a/launcher/app/src/main/AndroidManifest.xml b/launcher/app/src/main/AndroidManifest.xml
-index 701b5fe..c78c0f7 100644
+index 701b5fe..cd8b972 100644
 --- a/launcher/app/src/main/AndroidManifest.xml
 +++ b/launcher/app/src/main/AndroidManifest.xml
 @@ -7,6 +7,8 @@
@@ -2821,6 +2841,21 @@ index 701b5fe..c78c0f7 100644
      <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
      <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
      <!-- Needed since Android 10 to read the Wi-Fi network name for the network pill. Never requested at
+@@ -170,6 +172,14 @@
+             </intent-filter>
+         </activity>
+ 
++        <!-- app_keys "voice-search": the TV's speech recognition, then the words as a YouTube search in SmartTube. -->
++        <activity
++            android:name=".VoiceSearchActivity"
++            android:exported="false"
++            android:excludeFromRecents="true"
++            android:noHistory="false"
++            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
++
+         <!-- The same clock, started by Home itself after home_idle_clock_minutes without input. -->
+         <activity
+             android:name=".ClockActivity"
 diff --git a/launcher/app/src/main/java/com/gathin/tvhome/AppAdapter.java b/launcher/app/src/main/java/com/gathin/tvhome/AppAdapter.java
 index 3632d74..3c9f3bb 100644
 --- a/launcher/app/src/main/java/com/gathin/tvhome/AppAdapter.java
@@ -2920,10 +2955,10 @@ index 3632d74..3c9f3bb 100644
      public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
          if (isLibraryAt(position)) return;
 diff --git a/launcher/app/src/main/java/com/gathin/tvhome/Config.java b/launcher/app/src/main/java/com/gathin/tvhome/Config.java
-index 71356ff..57afa0f 100644
+index 71356ff..5efbe51 100644
 --- a/launcher/app/src/main/java/com/gathin/tvhome/Config.java
 +++ b/launcher/app/src/main/java/com/gathin/tvhome/Config.java
-@@ -139,6 +139,17 @@ final class Config {
+@@ -139,6 +139,20 @@ final class Config {
      final boolean showHomeSettingsShortcut;
      /** One line under the clock: CPU, free memory, free storage. Off unless config or a theme turns it on. */
      final boolean showStats;
@@ -2935,13 +2970,16 @@ index 71356ff..57afa0f 100644
 +    String weatherApp = "";
 +    boolean addTile;
 +    boolean keyFilterHomeOnly;
++    /** voice_search_app: the app the voice-search key target opens its YouTube search in. */
++    String voiceSearchApp = "org.smarttube.stable";
++    boolean searchPill;
 +    String weatherLatitude = "";
 +    String weatherLongitude = "";
 +    String weatherPlace = "";
      /** App library pill after the last Home row (config.xml app_library). */
      final boolean appLibrary;
      /** OK directly toggles Home membership in the library (app_library_selection). */
-@@ -645,9 +656,25 @@ final class Config {
+@@ -645,9 +659,25 @@ final class Config {
          }
          // A festive skin comes only from a theme; config.xml has no festival.
          Festival festival = json == null ? Festival.NONE : Festival.parse(string(json, "festival", ""),
@@ -2969,7 +3007,7 @@ index 71356ff..57afa0f 100644
                  packageMap(appBanners), panelService, panelAction, panelExtra, coocaaSources, inputAction, inputSources, inputUriScheme, Math.max(1, columns),
                  Math.max(0, rowsBelow), animations, advancedEffects, shamsi, greetingName, moduleCards, reducedMotion, bootToLiveTv,
                  openOnStartChoice, dockTitle, dockRow, topMenu, launcherSettingsButton, reorderButton, showNetworkPill, showInputsPill,
-@@ -661,6 +688,23 @@ final class Config {
+@@ -661,6 +691,26 @@ final class Config {
                  consumeVolumeKeys, powerOnHome, homeLongPressHome, wifiStatusWarnings, topBarApps, showGreeting, headerWhite, clockWallpaper,
                  Math.max(0, Math.min(90, clockWallpaperDim)), clockGlow, glassStyle, singleRow && dockRow, dockBandAll, lunar, lunarOffset,
                  dateBelowClock, vpnPill, locale, powerOnHomeAlways);
@@ -2984,6 +3022,9 @@ index 71356ff..57afa0f 100644
 +        config.addTile = json != null && bool(json, "add_tile", false);
 +        // key_filter_home_only: InputKeyService filters keys only while Home is on screen (held Volume ramps in apps).
 +        config.keyFilterHomeOnly = json != null && bool(json, "key_filter_home_only", false);
++        if (json != null) config.voiceSearchApp = string(json, "voice_search_app", config.voiceSearchApp);
++        // search_pill: a Search pill first in the top bar for the voice search (the mic button goes to the Assistant).
++        config.searchPill = json != null && bool(json, "search_pill", false);
 +        config.weatherLatitude = json == null ? res.getString(R.string.latitude)
 +                : string(json, "weather_latitude", res.getString(R.string.latitude));
 +        config.weatherLongitude = json == null ? res.getString(R.string.longitude)
@@ -3378,6 +3419,60 @@ index 148ff50..15d1c90 100644
 +        }
 +    }
  }
+diff --git a/launcher/app/src/main/java/com/gathin/tvhome/HomeKeyService.java b/launcher/app/src/main/java/com/gathin/tvhome/HomeKeyService.java
+index 233f982..184d99a 100644
+--- a/launcher/app/src/main/java/com/gathin/tvhome/HomeKeyService.java
++++ b/launcher/app/src/main/java/com/gathin/tvhome/HomeKeyService.java
+@@ -317,9 +317,27 @@ public class HomeKeyService extends AccessibilityService {
+             openHome();
+             return;
+         }
+-        // stock_home_redirect: the firmware turned the stock launcher back on and its home screen came up.
++        // The Assistant in front: voice search results come next, in the stock home's own screen (Google TV).
++        if (ASSISTANT.contentEquals(event.getPackageName() == null ? "" : event.getPackageName())) {
++            assistantAt = SystemClock.elapsedRealtime();
++        }
++        // stock_home_redirect: the firmware turned the stock launcher back on and its home screen came up. Not
++        // right after the Assistant: Google TV lists voice search results in that same screen.
+         CharSequence cls = event.getClassName();
+-        if (!stockHome.isEmpty() && cls != null && stockHome.contains(cls.toString())) openHome();
++        if (!stockHome.isEmpty() && cls != null && stockHome.contains(cls.toString())
++                && !afterAssistant(SystemClock.elapsedRealtime(), assistantAt)) {
++            openHome(true);
++        }
++    }
++
++    /** Google TV's voice assistant; its search results open in launcherx's HomeActivity. */
++    static final String ASSISTANT = "com.google.android.katniss";
++    /** How long after the Assistant was in front the stock home is taken to be its search results. */
++    static final long ASSISTANT_GRACE_MS = 30_000L;
++    private long assistantAt = -ASSISTANT_GRACE_MS;
++
++    static boolean afterAssistant(long now, long assistantAt) {
++        return now - assistantAt < ASSISTANT_GRACE_MS;
+     }
+ 
+     /** How long power_on_home stays armed after the screen turns on without a reboot. */
+@@ -413,10 +431,17 @@ public class HomeKeyService extends AccessibilityService {
+     }
+ 
+     private void openHome() {
++        openHome(false);
++    }
++
++    /** {@code quiet}: a redirect from the stock home's screen, swapped in without a transition so it shows less. */
++    private void openHome(boolean quiet) {
+         Intent open = stockHomeStays() ? new Intent(this, MainActivity.class)
+                 : new Intent(Intent.ACTION_MAIN).setPackage(getPackageName());
+-        startActivity(open.addCategory(Intent.CATEGORY_HOME)
+-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED));
++        open.addCategory(Intent.CATEGORY_HOME)
++                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
++        if (quiet) open.addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION);
++        startActivity(open);
+     }
+ 
+     /** stock_home_redirect while Android's Home is still the stock launcher (launcherx on Google TV outranks this
 diff --git a/launcher/app/src/main/java/com/gathin/tvhome/InputKeyService.java b/launcher/app/src/main/java/com/gathin/tvhome/InputKeyService.java
 index 4b8f574..977a0e0 100644
 --- a/launcher/app/src/main/java/com/gathin/tvhome/InputKeyService.java
@@ -3436,7 +3531,7 @@ index 4b8f574..977a0e0 100644
          if (consumeVolumeKeys) VolumeKeys.stop();
          super.onDestroy();
 diff --git a/launcher/app/src/main/java/com/gathin/tvhome/MainActivity.java b/launcher/app/src/main/java/com/gathin/tvhome/MainActivity.java
-index a5acd79..374dd32 100644
+index a5acd79..c83d6bd 100644
 --- a/launcher/app/src/main/java/com/gathin/tvhome/MainActivity.java
 +++ b/launcher/app/src/main/java/com/gathin/tvhome/MainActivity.java
 @@ -234,10 +234,23 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
@@ -3536,15 +3631,16 @@ index a5acd79..374dd32 100644
          });
          grid.setHasFixedSize(true);
          grid.setItemAnimator(null);
-@@ -735,6 +771,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+@@ -735,6 +771,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
          });
          btnLibraryTop.setVisibility(cfg.libraryButton && cfg.appLibrary ? View.VISIBLE : View.GONE);
          addTopBarApps(cfg.topBarApps, cfg.launchActions);
 +        if (weatherFeed != null && cfg.weatherPill) addWeatherPill(cfg.weatherApp);
++        if (cfg.searchPill) addSearchPill();
          iconOnlyButtons = cfg.iconOnlyButtons;
          topMenu = cfg.topMenu;
          wifiIconOnly = iconOnlyButtons && cfg.wifiLabelWidth <= 0;
-@@ -808,7 +845,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+@@ -808,7 +846,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                          .setDuration(reducedMotion ? Motion.REDUCED_MS : 160).start());
              }
          }
@@ -3553,7 +3649,7 @@ index a5acd79..374dd32 100644
  
          // Hide the glass when focus leaves the tiles.
          getWindow().getDecorView().getViewTreeObserver().addOnGlobalFocusChangeListener((oldF, newF) -> {
-@@ -940,8 +977,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+@@ -940,8 +978,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
      @Override
      protected void onResume() {
          super.onResume();
@@ -3566,7 +3662,7 @@ index a5acd79..374dd32 100644
              recreate();
              return;
          }
-@@ -983,13 +1023,14 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+@@ -983,13 +1024,14 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
              pillsShown = true;
          }
          if (showStats) startStats();
@@ -3582,7 +3678,7 @@ index a5acd79..374dd32 100644
                  lastPetalShower = today;
                  handler.postDelayed(this::playPetalShower, 450);
              }
-@@ -1151,6 +1192,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+@@ -1151,6 +1193,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
      @Override
      protected void onPause() {
          super.onPause();
@@ -3590,7 +3686,7 @@ index a5acd79..374dd32 100644
          root.removeCallbacks(showIdleClock);
          endReorder();   // Home or another app while reordering keeps the order so far
          wallpaperPlayer.stop();
-@@ -2274,6 +2316,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+@@ -2274,6 +2317,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                  if (adapter.isLibraryAt(count)) focusLibrary();
                  return true;
              }
@@ -3602,7 +3698,7 @@ index a5acd79..374dd32 100644
              target = Math.min(position + COLUMNS, count - 1);
          }
          focusTile(target);
-@@ -2511,7 +2558,20 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+@@ -2511,7 +2559,20 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
              else if (hour < 22) res = R.string.good_evening;
              else res = R.string.good_night;
          }
@@ -3624,7 +3720,7 @@ index a5acd79..374dd32 100644
          if (!festiveGreeting.isEmpty()) {
              greeting.setText(festiveGreeting);
              greeting.setTextColor(liftTowardsWhite(festival.accentColor(), 0.25f));
-@@ -2727,6 +2787,57 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+@@ -2727,6 +2788,70 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
          pill.getLayoutParams().width = Math.round(42 * density);
      }
  
@@ -3663,6 +3759,19 @@ index a5acd79..374dd32 100644
 +        return minute >= rise && minute < set;
 +    }
 +
++    /**
++     * search_pill: a voice search before Inputs. The remote's mic button goes straight to the Assistant, whose video
++     * results need the Google TV home; this one listens with the same recogniser and opens the results in SmartTube.
++     */
++    private void addSearchPill() {
++        ViewGroup bar = findViewById(R.id.topButtons);
++        TextView pill = (TextView) getLayoutInflater().inflate(R.layout.top_search_button, bar, false);
++        pill.setId(View.generateViewId());   // pillKeys finds the bar's ends by id
++        pill.setOnClickListener(v -> open(new Intent(this, VoiceSearchActivity.class)));
++        bar.addView(pill, bar.indexOfChild(btnInputs));
++        topAppButtons.add(pill);
++    }
++
 +    /** The weather pill, after Inputs; it stays hidden until the first weather arrives. */
 +    private void addWeatherPill(String app) {
 +        ViewGroup bar = findViewById(R.id.topButtons);
@@ -3682,6 +3791,34 @@ index a5acd79..374dd32 100644
      // ---- festive skin ------------------------------------------------------------------------------
  
      /**
+diff --git a/launcher/app/src/main/java/com/gathin/tvhome/RemoteKeys.java b/launcher/app/src/main/java/com/gathin/tvhome/RemoteKeys.java
+index 105fabc..0f5314b 100644
+--- a/launcher/app/src/main/java/com/gathin/tvhome/RemoteKeys.java
++++ b/launcher/app/src/main/java/com/gathin/tvhome/RemoteKeys.java
+@@ -44,6 +44,9 @@ final class RemoteKeys {
+     /** The app_keys target that opens the input switcher, as "scan:365:inputs". */
+     static final String INPUTS = "inputs";
+ 
++    /** The app_keys target that listens and opens the words as a YouTube search, as "KEYCODE_ASSIST:voice-search". */
++    static final String VOICE_SEARCH = "voice-search";
++
+     /** Pre-compiled regex patterns to avoid re-compiling Patterns on every entry during key parsing. */
+     private static final Pattern NUMERIC_KEY = Pattern.compile("[0-9]{1,6}");
+     private static final Pattern KEYCODE_KEY = Pattern.compile("KEYCODE_[A-Z0-9_]+");
+@@ -354,6 +357,13 @@ final class RemoteKeys {
+      *  "package/.Activity" target opens that activity. */
+     static void launch(Context ctx, String pkg) {
+         if (pkg == null || runAction(ctx, pkg)) return;
++        if (VOICE_SEARCH.equals(pkg)) {
++            try {
++                ctx.startActivity(new Intent(ctx, VoiceSearchActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
++            } catch (ActivityNotFoundException ignored) {
++            }
++            return;
++        }
+         if (INPUTS.equals(pkg)) {
+             // This launcher's own Inputs menu, as InputsRequestActivity opens it: addressed to Home directly, so a
+             // vendor input picker that also answers VIEW_INPUTS never turns it into a chooser.
 diff --git a/launcher/app/src/main/java/com/gathin/tvhome/Sky.java b/launcher/app/src/main/java/com/gathin/tvhome/Sky.java
 index 55d1c3e..4b82963 100644
 --- a/launcher/app/src/main/java/com/gathin/tvhome/Sky.java
@@ -3776,6 +3913,76 @@ index 96be4f7..4d2df4b 100644
          if (texture == null) texture = Bitmap.createBitmap(TEX_W, TEX_H, Bitmap.Config.ARGB_8888);
          Canvas canvas = new Canvas(texture);
          canvas.drawColor(0, android.graphics.PorterDuff.Mode.CLEAR);
+diff --git a/launcher/app/src/main/java/com/gathin/tvhome/VoiceSearchActivity.java b/launcher/app/src/main/java/com/gathin/tvhome/VoiceSearchActivity.java
+new file mode 100644
+index 0000000..8354025
+--- /dev/null
++++ b/launcher/app/src/main/java/com/gathin/tvhome/VoiceSearchActivity.java
+@@ -0,0 +1,64 @@
++package com.gathin.tvhome;
++
++import android.app.Activity;
++import android.content.ActivityNotFoundException;
++import android.content.Intent;
++import android.net.Uri;
++import android.os.Bundle;
++import android.speech.RecognizerIntent;
++
++import java.util.ArrayList;
++
++/**
++ * The app_keys target "voice-search": the TV's own speech recognition (Google's, on Google TV), then the words as
++ * a YouTube search opened in voice_search_app (SmartTube by default). On a Google TV whose Google TV home and stock
++ * YouTube are off, the Assistant's video results have nowhere to open ("having trouble"); this gives the mic button
++ * on Home a search that lands in SmartTube. Invisible: only the TV's listening screen shows.
++ */
++public class VoiceSearchActivity extends Activity {
++
++    private static final int LISTEN = 1;
++
++    @Override
++    protected void onCreate(Bundle state) {
++        super.onCreate(state);
++        if (state != null) return;   // recreated while the recogniser is up: its result still comes back here
++        Intent listen = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
++                .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_WEB_SEARCH)
++                .putExtra(RecognizerIntent.EXTRA_PROMPT, getString(R.string.voice_search_prompt))
++                .putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1);
++        try {
++            startActivityForResult(listen, LISTEN);
++        } catch (ActivityNotFoundException e) {
++            finish();   // no speech recognition on this TV
++        }
++    }
++
++    @Override
++    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
++        super.onActivityResult(requestCode, resultCode, data);
++        String words = null;
++        if (requestCode == LISTEN && resultCode == RESULT_OK && data != null) {
++            ArrayList<String> heard = data.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS);
++            if (heard != null && !heard.isEmpty()) words = heard.get(0);
++        }
++        if (words != null && !words.trim().isEmpty()) open(words.trim());
++        finish();
++    }
++
++    /** The words as a YouTube search link: SmartTube opens it on its search results; any YouTube app would too. */
++    private void open(String words) {
++        Uri search = Uri.parse("https://www.youtube.com/results?search_query=" + Uri.encode(words));
++        String app = Config.load(this).voiceSearchApp;
++        Intent view = new Intent(Intent.ACTION_VIEW, search).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
++        if (!app.isEmpty()) view.setPackage(app);
++        try {
++            startActivity(view);
++        } catch (ActivityNotFoundException e) {
++            try {
++                startActivity(view.setPackage(null));   // the named app is gone: whichever app opens YouTube links
++            } catch (ActivityNotFoundException ignored) {
++            }
++        }
++    }
++}
 diff --git a/launcher/app/src/main/java/com/gathin/tvhome/Weather.java b/launcher/app/src/main/java/com/gathin/tvhome/Weather.java
 new file mode 100644
 index 0000000..8b01827
@@ -4021,6 +4228,20 @@ index 0000000..0e5ccf0
 +        android:strokeLineCap="round"
 +        android:pathData="M12,5v14M5,12h14" />
 +</vector>
+diff --git a/launcher/app/src/main/res/drawable/ic_search.xml b/launcher/app/src/main/res/drawable/ic_search.xml
+new file mode 100644
+index 0000000..fa34969
+--- /dev/null
++++ b/launcher/app/src/main/res/drawable/ic_search.xml
+@@ -0,0 +1,8 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- Search pill icon: a magnifier, stroked like ic_wifi; after Lucide's "search" (ISC licence, lucide.dev). -->
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="22dp" android:height="22dp"
++    android:viewportWidth="24" android:viewportHeight="24">
++    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="2.2" android:strokeLineCap="round" android:strokeLineJoin="round"
++        android:pathData="M11,3a8,8 0,1 1,0 16a8,8 0,1 1,0 -16zM21,21l-4.3,-4.3" />
++</vector>
 diff --git a/launcher/app/src/main/res/drawable/ic_settings.xml b/launcher/app/src/main/res/drawable/ic_settings.xml
 index 376889d..44d737d 100644
 --- a/launcher/app/src/main/res/drawable/ic_settings.xml
@@ -4214,6 +4435,19 @@ index c037d24..9ab09c8 100644
                      </LinearLayout>
                  </LinearLayout>
  
+diff --git a/launcher/app/src/main/res/layout/top_search_button.xml b/launcher/app/src/main/res/layout/top_search_button.xml
+new file mode 100644
+index 0000000..5355aaa
+--- /dev/null
++++ b/launcher/app/src/main/res/layout/top_search_button.xml
+@@ -0,0 +1,7 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- search_pill: voice search in the top bar; OK opens VoiceSearchActivity (results in voice_search_app). -->
++<TextView xmlns:android="http://schemas.android.com/apk/res/android"
++    style="@style/TopButton"
++    android:drawableStart="@drawable/ic_search"
++    android:text="@string/search"
++    android:nextFocusDown="@+id/grid" />
 diff --git a/launcher/app/src/main/res/layout/top_weather_button.xml b/launcher/app/src/main/res/layout/top_weather_button.xml
 new file mode 100644
 index 0000000..daac353
@@ -4228,10 +4462,10 @@ index 0000000..daac353
 +    android:visibility="gone"
 +    android:nextFocusDown="@+id/grid" />
 diff --git a/launcher/app/src/main/res/values/strings.xml b/launcher/app/src/main/res/values/strings.xml
-index 635bced..f4b1289 100644
+index 635bced..9e61493 100644
 --- a/launcher/app/src/main/res/values/strings.xml
 +++ b/launcher/app/src/main/res/values/strings.xml
-@@ -17,6 +17,37 @@
+@@ -17,6 +17,39 @@
      <string name="good_night">Good night</string>
      <string name="festival_dussehra_greeting">Happy Dussehra</string>
      <string name="festival_diwali_greeting">Happy Diwali</string>
@@ -4266,6 +4500,8 @@ index 635bced..f4b1289 100644
 +    <string name="festival_countdown_tomorrow">%1$s tomorrow</string>
 +    <string name="festival_countdown_days">%1$s in %2$d days</string>
 +    <string name="add_app">Add app</string>
++    <string name="voice_search_prompt">Hold the mic button and say what to search</string>
++    <string name="search">Search</string>
      <string name="ethernet">Ethernet</string>
      <string name="offline">Offline</string>
      <string name="not_available">Not available on this TV</string>

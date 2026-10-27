@@ -19,8 +19,8 @@ No root, no cable, nothing uninstalled, and one double-click to undo. Built on
 | **Your name** | "Good evening, *your name*" |
 | **Indian festivals, automatic** | Diwali, Holi, Lohri, Makar Sankranti, Raksha Bandhan, Janmashtami, Ganesh Chaturthi, Navratri, Dussehra, Karwa Chauth, Gurpurab, Republic Day, Independence Day, Christmas and New Year. Each shows 14 days before and after (national days: 3 before, 1 after) with its own wallpaper, colour, diya/bell/marigold icons and a countdown ("Diwali in 5 days") under your name |
 | **Live weather for your city** | A weather pill in the top bar (icon + temperature), the sky tinted by the weather, and a full Weather app with the next 24 hours and 7 days |
-| **YouTube without ads** | [SmartTube](https://github.com/yuliskov/SmartTube) (official release, SHA-256 checked) replaces YouTube; YouTube links and search open in it, and the remote's YouTube button opens it from Home |
-| **Remote that still feels right** | Held Volume ramps normally in every app; Netflix and Prime buttons keep working; the **Remote Buttons** app lets you change what an app button opens |
+| **YouTube, plus SmartTube** | Stock YouTube stays, so **Google voice search** and the remote's **YouTube button** work as normal. [SmartTube](https://github.com/yuliskov/SmartTube) (YouTube without ads, official release, SHA-256 checked) is installed as an extra app |
+| **Remote that still feels right** | Held Volume ramps normally; YouTube, Netflix and Prime buttons work; the mic button does voice search |
 | **Phone as a remote** | The free Google TV app on your phone keeps working |
 
 ![The festival wallpapers](docs/screenshots/festival-wallpapers.jpg)
@@ -64,8 +64,10 @@ The app list in `lists/debloat.json` was tested on Xiaomi; on other brands only 
   controlled from your Wi-Fi. `Close-TV-Debugging.bat` turns it off and checks it.
 - **Network:** the home screen talks only to [Open-Meteo](https://open-meteo.com) (free weather, no account) with your
   city's latitude and longitude; setup also downloads Google's adb and SmartTube from their official sites.
-- **YouTube button:** on Google TV this button belongs to the Google TV home, which is turned off, so it opens SmartTube
-  only from the OpenTV Home screen. Inside apps, Volume is left completely alone so holding it ramps normally.
+- **Google TV home stays on (hidden):** it alone shows voice search results and answers the YouTube button. Android
+  always gives it the Home press first, so pressing Home shows it for a moment before OpenTV takes over. That is the
+  price of keeping voice search and a ramping Volume: catching the Home key directly would make held Volume step once
+  per press on many TVs. Details in [docs/GUIDE.md](docs/GUIDE.md).
 - More details, every problem we hit and the fix: **[docs/GUIDE.md](docs/GUIDE.md)**.
 
 ## What's inside
@@ -74,7 +76,7 @@ The app list in `lists/debloat.json` was tested on Xiaomi; on other brands only 
 |---|---|
 | `Setup-My-TV.bat`, `Restore-My-TV.bat`, `Close-TV-Debugging.bat` | The three things to double-click |
 | `scripts/` | The PowerShell behind them (readable, no hidden steps) |
-| `apps/` | Ready-built apps, in the Release zip: OpenTV home screen, Weather, World Clock, Remote Buttons |
+| `apps/` | Ready-built apps, in the Release zip: OpenTV home screen, Weather, World Clock |
 | `theme/` | The look: `config.json` (dock, festivals, weather, remote) and the 15 festival wallpapers |
 | `lists/debloat.json` | What can be turned off, grouped, with a reason for each |
 | `source/` | All code changes on top of CleanYourTV, and how to build the apps yourself |
